@@ -1,7 +1,7 @@
 # 2026-11-22 · 1회차 실습 정리
 
-러닝스푼즈 「생성형 AI와 LLM」 1회차 실습 노트북 6개를 정리했습니다.
-랭체인 기초에서 시작해 RAG 챗봇, 과제(멀티턴·멀티쿼리·도구 선택), 에이전트 3종(Plan & Execute, ReACT, Function Calling)까지 다룹니다.
+러닝스푼즈 「생성형 AI와 LLM」 1회차 실습 노트북 7개를 정리했습니다.
+랭체인 기초에서 시작해 RAG 챗봇, 과제(멀티턴·멀티쿼리·도구 선택), 에이전트 3종(Plan & Execute, ReACT, Function Calling), BM25 앙상블 검색까지 다룹니다.
 
 > **API 키 안내** — 노트북에 있던 키는 모두 지웠습니다. 실행하려면 Colab 왼쪽 🔑(보안 비밀)에 `OPENAI_API_KEY`를 등록하세요.
 > 코드는 `userdata.get("OPENAI_API_KEY")`로 키를 읽습니다.
@@ -16,6 +16,7 @@
 | 04 | [Plan & Execute 에이전트](notebooks/04_Plan_and_Execute_에이전트.ipynb) | LLM이 먼저 `{도구: [검색어들]}` 계획을 JSON으로 세우고, 그 계획대로 검색한 뒤 답변 |
 | 05 | [ReACT 에이전트](notebooks/05_ReACT_에이전트_RAG_멀티도구.ipynb) | Thought → Action → Observation 루프를 직접 구현해서, 필요한 만큼 검색을 반복 |
 | 06 | [Function Calling](notebooks/06_Function_Calling_실습.ipynb) | OpenAI `tools` 명세로 모델이 호출할 함수와 인자를 고르게 하고, 쇼핑몰 CS 봇으로 확장 |
+| 07 | [BM25 · 앙상블 리트리버](notebooks/07_BM25_앙상블_리트리버.ipynb) | 키워드 검색(BM25)과 임베딩 검색(bge-m3 + Chroma)을 섞는 앙상블·하이브리드 검색 비교 |
 
 ---
 
@@ -145,6 +146,36 @@ tool, action_input = _parse_action_and_input(resp.content)
 **주의할 점**
 - 모델은 함수를 **실행하지 않고 "무엇을 어떤 인자로 부를지"만 정해 줍니다.** 실행과 결과 전달은 코드 몫입니다.
 - 고객 ID는 시스템 메시지로 고정해서, 모델이 다른 고객 정보를 조회하지 않게 했습니다.
+
+## 07. BM25 · 앙상블 리트리버
+
+**흐름**
+1. BM25 개념: ① 단어 빈도(TF) ② 희귀할수록 중요(IDF) ③ 문서 길이 보정
+2. 삼성 GSAT 기업분석 PDF(27쪽) → `chunk_size=500` → 69개 청크
+3. `BM25Retriever.from_documents(texts)` (k=2) / `Chroma` + `HuggingFaceEmbeddings("BAAI/bge-m3")` (k=2)
+4. **앙상블**: 직접 만든 `EnsembleRetriever`가 RRF(Reciprocal Rank Fusion)로 두 검색기 순위를 합침 (가중치 BM25 0.2 : Chroma 0.8)
+5. **하이브리드**: 두 검색 결과를 번갈아 넣으며 중복 제거 (`HybridRetriever`)
+6. 검색기마다 `gpt-4.1`로 "삼성전자의 사업 영역은?"에 답하게 해서 비교
+
+**핵심 코드**
+```python
+bm25_retriever = BM25Retriever.from_documents(texts); bm25_retriever.k = 2
+chroma_retriever = Chroma.from_documents(texts, HuggingFaceEmbeddings(model_name="BAAI/bge-m3")).as_retriever(search_kwargs={"k": 2})
+ensemble_retriever = EnsembleRetriever(retrievers=[bm25_retriever, chroma_retriever], weights=[0.2, 0.8])
+```
+
+**결과 — 같은 질문, 검색기별 답변**
+| 검색기 | 가져온 문서 | 답변 |
+|---|---|---|
+| BM25만 | "하만(Harman) 인수" 질문 페이지 (키워드 '삼성전자' 일치) | 모바일·가전 + **전장 사업 확장** 위주로 좁게 답함 |
+| Chroma(bge-m3)만 | "사업분야(내용)" 페이지 | CE / IM / DS **3대 부문**을 정확히 정리 |
+| 앙상블 (4개) | 두 결과를 합침 | 3대 부문 + 세부 제품까지 가장 풍부 |
+| 하이브리드 | 번갈아 합침 | Chroma와 비슷하게 3대 부문 정리 |
+
+**주의할 점**
+- BM25는 단어가 겹치는지만 봐서, "사업 영역"처럼 뜻으로 찾아야 하는 질문에서는 엉뚱한 페이지를 가져올 수 있습니다. 반대로 고유명사·숫자 검색에는 강합니다.
+- 임베딩은 무료 오픈 모델(bge-m3)이라 API 키 없이 돌아갑니다. 키는 마지막 답변 생성(`gpt-4.1`)에만 필요합니다.
+- HF 토큰 없이 모델을 받으면 "unauthenticated requests" 경고가 뜹니다. 동작에는 문제없습니다.
 
 ---
 

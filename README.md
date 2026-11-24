@@ -7,7 +7,7 @@
 
 | 날짜 | 회차 | 내용 | 노트북 |
 |---|---|---|---|
-| 2026-11-22 | [1회차](2026-11-22_1회차/README.md) | 랭체인 기초, 금융 PDF RAG 챗봇, 멀티턴·멀티쿼리 과제, Plan & Execute / ReACT / Function Calling 에이전트 | 6개 |
+| 2026-11-22 | [1회차](2026-11-22_1회차/README.md) | 랭체인 기초, 금융 PDF RAG 챗봇, 멀티턴·멀티쿼리 과제, Plan & Execute / ReACT / Function Calling 에이전트, BM25 앙상블 검색 | 7개 |
 
 ## 실행 방법
 
